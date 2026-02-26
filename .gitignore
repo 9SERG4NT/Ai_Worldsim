@@ -1,0 +1,27 @@
+# Firebase
+serviceAccountKey.json
+
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Node
+node_modules/
+package-lock.json
+
+# Dashboard
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.env
+dashboard/.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp

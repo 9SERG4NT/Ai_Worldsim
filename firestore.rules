@@ -1,0 +1,31 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Simulation State — read/write for authenticated users
+    match /simulation_state/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Regions — read/write for authenticated users
+    match /regions/{regionId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Trade Hub — read/write for authenticated users
+    match /trade_hub/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Federal Assembly Logs — read/write for authenticated users
+    match /federal_assembly_logs/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Climate Events — read/write for authenticated users
+    match /climate_events/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

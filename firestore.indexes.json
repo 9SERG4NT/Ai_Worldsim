@@ -1,0 +1,61 @@
+{
+    "indexes": [
+        {
+            "collectionGroup": "regions",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "gdp_score",
+                    "order": "DESCENDING"
+                },
+                {
+                    "fieldPath": "welfare_score",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "open_orders",
+            "queryScope": "COLLECTION_GROUP",
+            "fields": [
+                {
+                    "fieldPath": "status",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "timestamp",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "executed_trades",
+            "queryScope": "COLLECTION_GROUP",
+            "fields": [
+                {
+                    "fieldPath": "tick",
+                    "order": "DESCENDING"
+                },
+                {
+                    "fieldPath": "timestamp",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "regions",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "welfare_score",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "demographics.migration_pressure",
+                    "order": "DESCENDING"
+                }
+            ]
+        }
+    ],
+    "fieldOverrides": []
+}
