@@ -114,7 +114,13 @@ async def broadcast(data: dict):
 # ─── Simulation Thread ────────────────────────────────────────────────────────
 
 def apply_intervention(env, intervention):
-    """Apply a federal intervention to the simulation state."""
+    """Apply a federal intervention to the simulation state.
+    
+    GDP Impact Formula:
+      - Resource crises reduce GDP proportionally: GDP_new = GDP * (1 - severity_factor)
+      - severity_factor depends on how critical the lost resource is to the state's economy
+      - Recovery is triggered by queuing an LLM recovery prompt for next tick
+    """
     action = intervention.get("action", "")
     target = intervention.get("target", "")
     
@@ -122,47 +128,113 @@ def apply_intervention(env, intervention):
         "type": intervention.get("severity", "danger"),
         "text": intervention.get("description", f"Federal intervention: {action}"),
         "timestamp": datetime.now().isoformat(),
+        "tick": sim.tick,
     }
+
+    gdp_impact = {}  # Track GDP changes for broadcast
 
     if target and target in env.regions_data:
         region = env.regions_data[target]
         resources = region.get("resources", {})
+        old_gdp = region.get("gdp_score", 50)
 
         if action == "drought":
             resources["water"] = max(0, int(resources.get("water", 0) * 0.3))
-            event_log["text"] = f"🏜️ FEDERAL: Drought in {STATE_NAMES.get(target, target)} — Water reserves -70%"
+            # Water scarcity hits agriculture → GDP drops 15-25%
+            gdp_penalty = old_gdp * 0.20
+            region["gdp_score"] = max(5, old_gdp - gdp_penalty)
+            region["welfare_score"] = max(10, region.get("welfare_score", 50) - 12)
+            event_log["text"] = f"🏜️ FEDERAL: Drought in {STATE_NAMES.get(target, target)} — Water -70%, GDP -{gdp_penalty:.1f} (now {region['gdp_score']:.1f})"
+            gdp_impact[target] = {"before": old_gdp, "after": region["gdp_score"], "change": -gdp_penalty}
+
         elif action == "flood":
             resources["food"] = max(0, int(resources.get("food", 0) * 0.2))
             resources["water"] = int(resources.get("water", 0) * 1.5)
-            event_log["text"] = f"🌊 FEDERAL: Catastrophic flooding in {STATE_NAMES.get(target, target)} — Food -80%"
+            # Floods destroy infrastructure → GDP drops 18-28%
+            gdp_penalty = old_gdp * 0.23
+            region["gdp_score"] = max(5, old_gdp - gdp_penalty)
+            region["welfare_score"] = max(10, region.get("welfare_score", 50) - 18)
+            event_log["text"] = f"🌊 FEDERAL: Flooding in {STATE_NAMES.get(target, target)} — Food -80%, GDP -{gdp_penalty:.1f} (now {region['gdp_score']:.1f})"
+            gdp_impact[target] = {"before": old_gdp, "after": region["gdp_score"], "change": -gdp_penalty}
+
         elif action == "energy_crisis":
             resources["energy"] = max(0, int(resources.get("energy", 0) * 0.25))
-            event_log["text"] = f"⚡ FEDERAL: Energy grid collapse in {STATE_NAMES.get(target, target)} — Energy -75%"
+            # Energy collapse shuts factories → GDP drops 22-30%
+            gdp_penalty = old_gdp * 0.27
+            region["gdp_score"] = max(5, old_gdp - gdp_penalty)
+            region["welfare_score"] = max(10, region.get("welfare_score", 50) - 10)
+            event_log["text"] = f"⚡ FEDERAL: Grid collapse in {STATE_NAMES.get(target, target)} — Energy -75%, GDP -{gdp_penalty:.1f} (now {region['gdp_score']:.1f})"
+            gdp_impact[target] = {"before": old_gdp, "after": region["gdp_score"], "change": -gdp_penalty}
+
         elif action == "tech_boom":
             resources["tech"] = int(resources.get("tech", 0) * 2.5)
-            event_log["text"] = f"💻 FEDERAL: Tech stimulus in {STATE_NAMES.get(target, target)} — Tech output +150%"
+            # Tech boom boosts economy
+            gdp_bonus = old_gdp * 0.25
+            region["gdp_score"] = old_gdp + gdp_bonus
+            region["welfare_score"] = min(100, region.get("welfare_score", 50) + 8)
+            event_log["text"] = f"💻 FEDERAL: Tech boom in {STATE_NAMES.get(target, target)} — Tech +150%, GDP +{gdp_bonus:.1f} (now {region['gdp_score']:.1f})"
             event_log["type"] = "success"
+            gdp_impact[target] = {"before": old_gdp, "after": region["gdp_score"], "change": gdp_bonus}
+
         elif action == "health_crisis":
             region["welfare_score"] = max(0, region.get("welfare_score", 50) - 30)
-            event_log["text"] = f"🦠 FEDERAL: Health emergency in {STATE_NAMES.get(target, target)} — Welfare -30"
+            # Health crisis reduces workforce → GDP drops 12-18%
+            gdp_penalty = old_gdp * 0.15
+            region["gdp_score"] = max(5, old_gdp - gdp_penalty)
+            event_log["text"] = f"🦠 FEDERAL: Health emergency in {STATE_NAMES.get(target, target)} — Welfare -30, GDP -{gdp_penalty:.1f}"
+            gdp_impact[target] = {"before": old_gdp, "after": region["gdp_score"], "change": -gdp_penalty}
+
         elif action == "monsoon_failure":
             resources["water"] = max(0, int(resources.get("water", 0) * 0.15))
             resources["food"] = max(0, int(resources.get("food", 0) * 0.4))
-            event_log["text"] = f"🌧️ FEDERAL: Monsoon failure in {STATE_NAMES.get(target, target)} — Water -85%, Food -60%"
+            # Dual resource loss → GDP drops 25-35%
+            gdp_penalty = old_gdp * 0.30
+            region["gdp_score"] = max(5, old_gdp - gdp_penalty)
+            region["welfare_score"] = max(10, region.get("welfare_score", 50) - 20)
+            event_log["text"] = f"🌧️ FEDERAL: Monsoon failure in {STATE_NAMES.get(target, target)} — Water -85%, Food -60%, GDP -{gdp_penalty:.1f}"
+            gdp_impact[target] = {"before": old_gdp, "after": region["gdp_score"], "change": -gdp_penalty}
         
         region["resources"] = resources
 
+        # ─── AI Recovery: Queue governor response for affected state ────────
+        recovery_msg = {
+            "state": target,
+            "text": f"🚨 CRISIS DETECTED: {action.upper()} — GDP dropped from {old_gdp:.1f} to {region['gdp_score']:.1f}. "
+                    f"Initiating emergency recovery: seeking resource trades from neighboring states, "
+                    f"activating reserves, requesting federal aid.",
+            "type": "recovery",
+            "tick": sim.tick,
+            "timestamp": datetime.now().isoformat(),
+        }
+        sim.add_governor_msg(recovery_msg)
+
     elif action == "gdp_crash":
         for code in env.regions_data:
-            env.regions_data[code]["gdp_score"] = max(0, env.regions_data[code].get("gdp_score", 0) * 0.7)
-        event_log["text"] = "📉 FEDERAL: National GDP crash — All states GDP -30%"
+            old = env.regions_data[code].get("gdp_score", 0)
+            env.regions_data[code]["gdp_score"] = max(5, old * 0.7)
+            env.regions_data[code]["welfare_score"] = max(10, env.regions_data[code].get("welfare_score", 50) - 8)
+            gdp_impact[code] = {"before": old, "after": env.regions_data[code]["gdp_score"], "change": -(old * 0.3)}
+        event_log["text"] = "📉 FEDERAL: National GDP crash — All states GDP -30%, Welfare -8"
+        # Recovery messages for all states
+        for code in env.regions_data:
+            sim.add_governor_msg({
+                "state": code,
+                "text": f"🚨 NATIONAL CRISIS: GDP crashed by 30%. Activating austerity measures and seeking emergency trade agreements.",
+                "type": "recovery",
+                "tick": sim.tick,
+                "timestamp": datetime.now().isoformat(),
+            })
     
     elif action == "stimulus":
         for code in env.regions_data:
-            env.regions_data[code]["gdp_score"] = env.regions_data[code].get("gdp_score", 0) * 1.15
-        event_log["text"] = "📈 FEDERAL: National economic stimulus — All states GDP +15%"
+            old = env.regions_data[code].get("gdp_score", 0)
+            env.regions_data[code]["gdp_score"] = old * 1.15
+            env.regions_data[code]["welfare_score"] = min(100, env.regions_data[code].get("welfare_score", 50) + 5)
+            gdp_impact[code] = {"before": old, "after": env.regions_data[code]["gdp_score"], "change": old * 0.15}
+        event_log["text"] = "📈 FEDERAL: National stimulus — All states GDP +15%, Welfare +5"
         event_log["type"] = "success"
 
+    event_log["gdp_impact"] = gdp_impact
     sim.add_climate_event(event_log)
     return event_log
 
@@ -357,8 +429,10 @@ def run_simulation_loop(ticks, use_llm, use_firebase, delay):
 
         # Calculate aggregate stats
         gdp_values = [r["gdp"] for r in regions_payload.values()]
+        welfare_values = [r["welfare"] for r in regions_payload.values()]
         total_gdp = sum(gdp_values)
         mean_gdp = total_gdp / len(gdp_values) if gdp_values else 0
+        avg_welfare = sum(welfare_values) / len(welfare_values) if welfare_values else 0
         n = len(gdp_values)
         if n > 0 and total_gdp > 0:
             sorted_gdp = sorted(gdp_values)
@@ -366,6 +440,14 @@ def run_simulation_loop(ticks, use_llm, use_firebase, delay):
             gini = cumulative / (n * total_gdp)
         else:
             gini = 0
+
+        # Find highest and lowest GDP regions
+        gdp_ranked = sorted(regions_payload.items(), key=lambda x: x[1]["gdp"], reverse=True)
+        highest_gdp = {"code": gdp_ranked[0][0], "name": gdp_ranked[0][1]["name"], "gdp": gdp_ranked[0][1]["gdp"]} if gdp_ranked else {}
+        lowest_gdp = {"code": gdp_ranked[-1][0], "name": gdp_ranked[-1][1]["name"], "gdp": gdp_ranked[-1][1]["gdp"]} if gdp_ranked else {}
+        
+        # GDP ranking list
+        gdp_ranking = [{"code": c, "name": d["name"], "gdp": round(d["gdp"], 1), "welfare": round(d["welfare"], 1)} for c, d in gdp_ranked]
 
         broadcast_data = {
             "type": "tick",
@@ -375,6 +457,10 @@ def run_simulation_loop(ticks, use_llm, use_firebase, delay):
                 "total_gdp": round(total_gdp, 2),
                 "gini": round(gini, 4),
                 "mean_gdp": round(mean_gdp, 2),
+                "avg_welfare": round(avg_welfare, 2),
+                "highest_gdp": highest_gdp,
+                "lowest_gdp": lowest_gdp,
+                "gdp_ranking": gdp_ranking,
             },
             "trades": sim.trade_log[:10],
             "governor_messages": sim.governor_log[-10:],

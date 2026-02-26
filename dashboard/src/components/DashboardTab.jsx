@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import {
     LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-    Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area
+    Tooltip, Legend, ResponsiveContainer, AreaChart, Area
 } from 'recharts'
 
 const API = 'http://localhost:8000'
@@ -16,8 +16,6 @@ const STATE_COLORS = {
     GJ: '#eab308', UP: '#ef4444', BR: '#ec4899', WB: '#14b8a6',
     RJ: '#f59e0b', MP: '#6366f1',
 }
-
-const PIE_COLORS = ['#06b6d4', '#f59e0b', '#10b981', '#a855f7']
 
 const fmt = (n) => {
     if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'
@@ -68,141 +66,163 @@ function ChartBox({ title, icon, children, style = {} }) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   LIVE TRADES & NEGOTIATIONS PANEL
-   — Shows real-time trades and governor AI messages from WebSocket
+   GDP RANKING PANEL — Highest & Lowest
+   ══════════════════════════════════════════════════════════════ */
+function GDPRankingPanel({ stats, regions }) {
+    const ranking = stats?.gdp_ranking || []
+    const highest = stats?.highest_gdp || {}
+    const lowest = stats?.lowest_gdp || {}
+
+    // If no live ranking, build from regions
+    const displayRanking = ranking.length > 0 ? ranking :
+        Object.entries(regions || {}).map(([c, d]) => ({
+            code: c, name: d.name || STATE_NAMES[c], gdp: d.gdp || 0, welfare: d.welfare || 0
+        })).sort((a, b) => b.gdp - a.gdp)
+
+    return (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+            {/* Highest GDP */}
+            <div style={{
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                borderRadius: 16, padding: 20, color: '#fff', position: 'relative', overflow: 'hidden',
+            }}>
+                <div style={{ position: 'absolute', right: -10, top: -10, fontSize: 80, opacity: 0.15 }}>🏆</div>
+                <div style={{ fontSize: 11, fontWeight: 600, opacity: 0.8, textTransform: 'uppercase', letterSpacing: 1 }}>Highest GDP</div>
+                <div style={{ fontSize: 28, fontWeight: 800, marginTop: 8 }}>{displayRanking[0]?.name || '—'}</div>
+                <div style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>₹{(displayRanking[0]?.gdp || 0).toFixed(1)}B</div>
+                <div style={{ fontSize: 11, marginTop: 6, opacity: 0.8 }}>
+                    Welfare: {(displayRanking[0]?.welfare || 0).toFixed(0)}%
+                </div>
+            </div>
+
+            {/* Lowest GDP */}
+            <div style={{
+                background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                borderRadius: 16, padding: 20, color: '#fff', position: 'relative', overflow: 'hidden',
+            }}>
+                <div style={{ position: 'absolute', right: -10, top: -10, fontSize: 80, opacity: 0.15 }}>⚠️</div>
+                <div style={{ fontSize: 11, fontWeight: 600, opacity: 0.8, textTransform: 'uppercase', letterSpacing: 1 }}>Lowest GDP</div>
+                <div style={{ fontSize: 28, fontWeight: 800, marginTop: 8 }}>{displayRanking[displayRanking.length - 1]?.name || '—'}</div>
+                <div style={{ fontSize: 22, fontWeight: 700, marginTop: 4 }}>₹{(displayRanking[displayRanking.length - 1]?.gdp || 0).toFixed(1)}B</div>
+                <div style={{ fontSize: 11, marginTop: 6, opacity: 0.8 }}>
+                    Welfare: {(displayRanking[displayRanking.length - 1]?.welfare || 0).toFixed(0)}%
+                </div>
+            </div>
+
+            {/* Full Ranking */}
+            <ChartBox title="GDP Leaderboard" icon="leaderboard">
+                <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+                    {displayRanking.map((r, i) => (
+                        <div key={r.code} style={{
+                            display: 'flex', alignItems: 'center', gap: 8,
+                            padding: '6px 8px', borderRadius: 8, marginBottom: 3,
+                            background: i === 0 ? '#f0fdf4' : i === displayRanking.length - 1 ? '#fef2f2' : '#f8fafc',
+                        }}>
+                            <span style={{
+                                width: 22, height: 22, borderRadius: '50%', display: 'flex',
+                                alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800,
+                                background: i < 3 ? '#3b82f6' : '#94a3b8', color: '#fff',
+                            }}>{i + 1}</span>
+                            <div style={{
+                                width: 8, height: 8, borderRadius: '50%',
+                                background: STATE_COLORS[r.code] || '#999', flexShrink: 0,
+                            }} />
+                            <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: '#334155' }}>{r.name}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', fontFamily: 'monospace' }}>₹{r.gdp.toFixed(1)}</span>
+                        </div>
+                    ))}
+                </div>
+            </ChartBox>
+        </div>
+    )
+}
+
+/* ══════════════════════════════════════════════════════════════
+   LIVE TRADES & AI NEGOTIATIONS PANEL
    ══════════════════════════════════════════════════════════════ */
 function LiveFeed({ trades, governorMessages, climateEvents, tick }) {
     return (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
             {/* Live Trades */}
             <ChartBox title={`🔄 Live Trades (Tick ${tick})`} icon="swap_horiz">
-                <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                <div style={{ maxHeight: 260, overflowY: 'auto' }}>
                     {(!trades || trades.length === 0) ? (
-                        <div style={{ textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 13 }}>
-                            ⏳ Waiting for trades from LLM agents...
-                        </div>
-                    ) : (
-                        trades.slice(-15).reverse().map((t, i) => (
-                            <div key={i} style={{
-                                padding: '10px 12px', marginBottom: 6, borderRadius: 10,
-                                background: i === 0 ? '#eff6ff' : '#f8fafc',
-                                borderLeft: `3px solid ${i === 0 ? '#3b82f6' : '#e2e8f0'}`,
-                                animation: i === 0 ? 'fadeIn 0.5s' : 'none',
-                            }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                                    <span style={{ fontSize: 13, fontWeight: 700 }}>
-                                        <span style={{ color: STATE_COLORS[t.from] || '#333' }}>{STATE_NAMES[t.from] || t.from}</span>
-                                        <span style={{ color: '#94a3b8', margin: '0 6px' }}>→</span>
-                                        <span style={{ color: STATE_COLORS[t.to] || '#333' }}>{STATE_NAMES[t.to] || t.to}</span>
-                                    </span>
-                                    <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500 }}>Tick {t.tick}</span>
-                                </div>
-                                <div style={{ fontSize: 11, color: '#475569' }}>
-                                    {t.offering && typeof t.offering === 'object'
-                                        ? <>📦 <b>Offering:</b> {Object.entries(t.offering).map(([k, v]) => `${k}: ${fmt(v)}`).join(', ')}</>
-                                        : `📦 Trade executed`
-                                    }
-                                </div>
-                                {t.requesting && typeof t.requesting === 'object' && (
-                                    <div style={{ fontSize: 11, color: '#475569' }}>
-                                        🎯 <b>Requesting:</b> {Object.entries(t.requesting).map(([k, v]) => `${k}: ${fmt(v)}`).join(', ')}
-                                    </div>
-                                )}
+                        <div style={{ textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 13 }}>⏳ Waiting for LLM trades...</div>
+                    ) : trades.slice(-12).reverse().map((t, i) => (
+                        <div key={i} style={{
+                            padding: '8px 10px', marginBottom: 5, borderRadius: 10,
+                            background: i === 0 ? '#eff6ff' : '#f8fafc',
+                            borderLeft: `3px solid ${i === 0 ? '#3b82f6' : '#e2e8f0'}`,
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                                <span style={{ fontSize: 12, fontWeight: 700 }}>
+                                    <span style={{ color: STATE_COLORS[t.from] || '#333' }}>{STATE_NAMES[t.from] || t.from}</span>
+                                    <span style={{ color: '#94a3b8', margin: '0 5px' }}>→</span>
+                                    <span style={{ color: STATE_COLORS[t.to] || '#333' }}>{STATE_NAMES[t.to] || t.to}</span>
+                                </span>
+                                <span style={{ fontSize: 9, color: '#94a3b8' }}>Tick {t.tick}</span>
                             </div>
-                        ))
-                    )}
+                            {t.offering && typeof t.offering === 'object' && (
+                                <div style={{ fontSize: 11, color: '#16a34a' }}>📦 {Object.entries(t.offering).map(([k, v]) => `${k}: ${fmt(v)}`).join(', ')}</div>
+                            )}
+                            {t.requesting && typeof t.requesting === 'object' && (
+                                <div style={{ fontSize: 11, color: '#2563eb' }}>🎯 {Object.entries(t.requesting).map(([k, v]) => `${k}: ${fmt(v)}`).join(', ')}</div>
+                            )}
+                        </div>
+                    ))}
                 </div>
             </ChartBox>
 
             {/* Governor AI Negotiations */}
             <ChartBox title="🤖 Governor AI Negotiations" icon="smart_toy">
-                <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                <div style={{ maxHeight: 260, overflowY: 'auto' }}>
                     {(!governorMessages || governorMessages.length === 0) ? (
-                        <div style={{ textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 13 }}>
-                            🧠 AI Governor thinking...
-                        </div>
-                    ) : (
-                        governorMessages.slice(-12).reverse().map((msg, i) => (
-                            <div key={i} style={{
-                                padding: '10px 12px', marginBottom: 6, borderRadius: 10,
-                                background: i === 0 ? '#f0fdf4' : '#f8fafc',
-                                borderLeft: `3px solid ${STATE_COLORS[msg.state] || '#10b981'}`,
-                            }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                                    <span style={{ fontSize: 12, fontWeight: 700, color: STATE_COLORS[msg.state] || '#333' }}>
-                                        {STATE_NAMES[msg.state] || msg.state}
-                                    </span>
-                                    <span style={{ fontSize: 10, color: '#94a3b8' }}>Tick {msg.tick}</span>
-                                </div>
-                                <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.4 }}>{msg.text}</div>
+                        <div style={{ textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 13 }}>🧠 AI thinking...</div>
+                    ) : governorMessages.slice(-10).reverse().map((msg, i) => (
+                        <div key={i} style={{
+                            padding: '8px 10px', marginBottom: 5, borderRadius: 10,
+                            background: msg.type === 'recovery' ? '#fef2f2' : i === 0 ? '#f0fdf4' : '#f8fafc',
+                            borderLeft: `3px solid ${msg.type === 'recovery' ? '#ef4444' : STATE_COLORS[msg.state] || '#10b981'}`,
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: STATE_COLORS[msg.state] || '#333' }}>
+                                    {STATE_NAMES[msg.state] || msg.state}
+                                </span>
+                                <span style={{ fontSize: 9, color: '#94a3b8' }}>Tick {msg.tick}</span>
                             </div>
-                        ))
-                    )}
-                </div>
-            </ChartBox>
-
-            {/* Climate Events */}
-            <ChartBox title="🌍 Climate & Events" icon="thunderstorm">
-                <div style={{ maxHeight: 280, overflowY: 'auto' }}>
-                    {(!climateEvents || climateEvents.length === 0) ? (
-                        <div style={{ textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 13 }}>
-                            🌤️ No climate events yet
+                            <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.3 }}>{msg.text}</div>
                         </div>
-                    ) : (
-                        climateEvents.slice(-12).reverse().map((evt, i) => (
-                            <div key={i} style={{
-                                padding: '10px 12px', marginBottom: 6, borderRadius: 10,
-                                background: evt.type === 'danger' ? '#fef2f2' : '#fffbeb',
-                                borderLeft: `3px solid ${evt.type === 'danger' ? '#ef4444' : '#f59e0b'}`,
-                            }}>
-                                <div style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>{evt.text}</div>
-                                <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>Tick {evt.tick}</div>
-                            </div>
-                        ))
-                    )}
-                </div>
-            </ChartBox>
-        </div>
-    )
-}
-
-/* ── CSV Trade Log ─────────────────────────────────────────── */
-function CsvTradeLog({ csvTrades }) {
-    return (
-        <div style={{ maxHeight: 320, overflowY: 'auto', fontSize: 12 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                    <tr style={{ borderBottom: '2px solid #e2e8f0', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
-                        {['Tick', 'State', 'Type', 'Resource', 'Quantity', 'Price', 'Status'].map(h => (
-                            <th key={h} style={{ textAlign: 'left', padding: '8px 8px', color: '#64748b', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody>
-                    {csvTrades.slice(-80).reverse().map((t, i) => (
-                        <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fafbfc' : '#fff' }}>
-                            <td style={td}>{t.tick}</td>
-                            <td style={td}><span style={{ fontWeight: 600, color: STATE_COLORS[t.state] || '#333' }}>{STATE_NAMES[t.state] || t.state}</span></td>
-                            <td style={td}>
-                                <span style={{
-                                    padding: '2px 7px', borderRadius: 6, fontSize: 10, fontWeight: 700,
-                                    background: t.order_type === 'BID' ? '#dbeafe' : '#fef3c7',
-                                    color: t.order_type === 'BID' ? '#1d4ed8' : '#92400e',
-                                }}>{t.order_type}</span>
-                            </td>
-                            <td style={td}>{t.resource}</td>
-                            <td style={{ ...td, fontFamily: 'monospace' }}>{fmt(t.quantity)}</td>
-                            <td style={{ ...td, fontFamily: 'monospace' }}>₹{t.price.toFixed(2)}</td>
-                            <td style={td}>{t.executed ? <span style={{ color: '#16a34a' }}>✅</span> : <span style={{ color: '#dc2626' }}>❌</span>}</td>
-                        </tr>
                     ))}
-                </tbody>
-            </table>
+                </div>
+            </ChartBox>
+
+            {/* Climate & Intervention Events */}
+            <ChartBox title="🌍 Events & Interventions" icon="thunderstorm">
+                <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+                    {(!climateEvents || climateEvents.length === 0) ? (
+                        <div style={{ textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 13 }}>🌤️ No events yet</div>
+                    ) : climateEvents.slice(-10).reverse().map((evt, i) => (
+                        <div key={i} style={{
+                            padding: '8px 10px', marginBottom: 5, borderRadius: 10,
+                            background: evt.type === 'success' ? '#f0fdf4' : '#fef2f2',
+                            borderLeft: `3px solid ${evt.type === 'success' ? '#10b981' : '#ef4444'}`,
+                        }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: '#334155' }}>{evt.text}</div>
+                            {evt.gdp_impact && Object.keys(evt.gdp_impact).length > 0 && (
+                                <div style={{ fontSize: 10, color: '#ef4444', marginTop: 2 }}>
+                                    💰 GDP Impact: {Object.entries(evt.gdp_impact).map(([c, d]) =>
+                                        `${STATE_NAMES[c] || c}: ${d.change > 0 ? '+' : ''}${d.change.toFixed(1)}`
+                                    ).join(', ')}
+                                </div>
+                            )}
+                            <div style={{ fontSize: 9, color: '#94a3b8', marginTop: 2 }}>Tick {evt.tick}</div>
+                        </div>
+                    ))}
+                </div>
+            </ChartBox>
         </div>
     )
 }
-
-const td = { padding: '6px 8px', color: '#334155', fontSize: 12 }
 
 
 /* ═══════════════════════════════════════════════════════════════
@@ -213,26 +233,20 @@ export default function DashboardTab({ tick, regions, trades, governorMessages, 
     const [gdpHistory, setGdpHistory] = useState([])
     const [welfareHistory, setWelfareHistory] = useState([])
     const [resourceOverview, setResourceOverview] = useState([])
-    const [tradeVolume, setTradeVolume] = useState([])
-    const [csvTrades, setCsvTrades] = useState([])
     const [tradeActivity, setTradeActivity] = useState([])
-    const [climateSummary, setClimateSummary] = useState([])
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
         const load = async () => {
             try {
-                const [gdp, welfare, overview, vol, tr, activity, climate] = await Promise.all([
+                const [gdp, welfare, overview, activity] = await Promise.all([
                     fetch(`${API}/api/csv/gdp-history`).then(r => r.json()),
                     fetch(`${API}/api/csv/welfare-history`).then(r => r.json()),
                     fetch(`${API}/api/csv/overview`).then(r => r.json()),
-                    fetch(`${API}/api/csv/trade-volume`).then(r => r.json()),
-                    fetch(`${API}/api/csv/trades`).then(r => r.json()),
                     fetch(`${API}/api/csv/trade-activity`).then(r => r.json()),
-                    fetch(`${API}/api/csv/climate-summary`).then(r => r.json()),
                 ])
-                setGdpHistory(gdp); setWelfareHistory(welfare); setResourceOverview(overview)
-                setTradeVolume(vol); setCsvTrades(tr); setTradeActivity(activity); setClimateSummary(climate)
+                setGdpHistory(gdp); setWelfareHistory(welfare)
+                setResourceOverview(overview); setTradeActivity(activity)
             } catch (e) { console.error('CSV load error:', e) }
             setLoading(false)
         }
@@ -240,8 +254,10 @@ export default function DashboardTab({ tick, regions, trades, governorMessages, 
     }, [])
 
     const totalGDP = stats?.total_gdp || Object.values(regions || {}).reduce((s, r) => s + (r.gdp || 0), 0)
-    const avgWelfare = stats?.avg_welfare || (Object.values(regions || {}).reduce((s, r) => s + (r.welfare || 0), 0) / Math.max(Object.keys(regions || {}).length, 1))
+    const avgWelfare = stats?.avg_welfare || 0
     const gini = stats?.gini || 0
+    const highest = stats?.highest_gdp || {}
+    const lowest = stats?.lowest_gdp || {}
 
     return (
         <div style={{ padding: 20, paddingBottom: 60 }}>
@@ -250,10 +266,19 @@ export default function DashboardTab({ tick, regions, trades, governorMessages, 
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
                 <StatCard icon="monitoring" label="Live Tick" value={tick || 0} sub={connected ? '🟢 Live' : '🔴 Offline'} color="#3b82f6" />
                 <StatCard icon="payments" label="Total GDP" value={`₹${totalGDP.toFixed(1)}B`} color="#10b981" />
-                <StatCard icon="favorite" label="Welfare" value={`${avgWelfare.toFixed(1)}%`} color="#f59e0b" />
-                <StatCard icon="equalizer" label="Gini" value={gini.toFixed(3)} sub={gini > 0.5 ? '⚠️ High' : '✅ OK'} color={gini > 0.5 ? '#ef4444' : '#10b981'} />
-                <StatCard icon="swap_horiz" label="Live Trades" value={trades?.length || 0} sub="from Ollama" color="#a855f7" />
-                <StatCard icon="psychology" label="AI Messages" value={governorMessages?.length || 0} color="#ec4899" />
+                <StatCard icon="trending_up" label="Highest GDP" value={highest.name || '—'} sub={`₹${(highest.gdp || 0).toFixed(1)}B`} color="#059669" />
+                <StatCard icon="trending_down" label="Lowest GDP" value={lowest.name || '—'} sub={`₹${(lowest.gdp || 0).toFixed(1)}B`} color="#ef4444" />
+                <StatCard icon="favorite" label="Avg Welfare" value={`${avgWelfare.toFixed(1)}%`} color="#f59e0b" />
+                <StatCard icon="equalizer" label="Gini Index" value={gini.toFixed(3)} sub={gini > 0.5 ? '⚠️ High inequality' : '✅ Balanced'} color={gini > 0.5 ? '#ef4444' : '#10b981'} />
+            </div>
+
+            {/* ── GDP RANKINGS — Highest & Lowest ─────────── */}
+            <div style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 20, color: '#3b82f6' }}>leaderboard</span>
+                    <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>GDP Rankings — Live</h2>
+                </div>
+                <GDPRankingPanel stats={stats} regions={regions} />
             </div>
 
             {/* ── LIVE FEED: Trades + Negotiations + Climate ─ */}
@@ -266,14 +291,11 @@ export default function DashboardTab({ tick, regions, trades, governorMessages, 
                 <LiveFeed trades={trades} governorMessages={governorMessages} climateEvents={climateEvents} tick={tick} />
             </div>
 
-            {/* ── Charts Grid ─────────────────────────────── */}
-            {loading ? (
-                <div style={{ textAlign: 'center', padding: 60, color: '#94a3b8' }}>Loading CSV dataset (10,000 rows)...</div>
-            ) : (
+            {/* ── Charts (from CSV dataset) ────────────────── */}
+            {!loading && (
                 <>
-                    {/* GDP Line Chart — full width */}
-                    <ChartBox title="GDP Trends (120 Ticks from Dataset)" icon="trending_up" style={{ marginBottom: 20 }}>
-                        <ResponsiveContainer width="100%" height={280}>
+                    <ChartBox title="GDP Trends (Historical — 120 Ticks)" icon="trending_up" style={{ marginBottom: 20 }}>
+                        <ResponsiveContainer width="100%" height={260}>
                             <LineChart data={gdpHistory}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                 <XAxis dataKey="tick" tick={{ fontSize: 10 }} stroke="#94a3b8" />
@@ -288,10 +310,9 @@ export default function DashboardTab({ tick, regions, trades, governorMessages, 
                         </ResponsiveContainer>
                     </ChartBox>
 
-                    {/* 2-column charts */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
                         <ChartBox title="Resource Supply by State" icon="inventory_2">
-                            <ResponsiveContainer width="100%" height={250}>
+                            <ResponsiveContainer width="100%" height={240}>
                                 <BarChart data={resourceOverview}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                     <XAxis dataKey="state" tick={{ fontSize: 10 }} stroke="#94a3b8" />
@@ -306,23 +327,22 @@ export default function DashboardTab({ tick, regions, trades, governorMessages, 
                         </ChartBox>
 
                         <ChartBox title="Trade Activity (BID vs ASK)" icon="candlestick_chart">
-                            <ResponsiveContainer width="100%" height={250}>
+                            <ResponsiveContainer width="100%" height={240}>
                                 <BarChart data={tradeActivity}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                     <XAxis dataKey="state" tick={{ fontSize: 10 }} stroke="#94a3b8" />
                                     <YAxis tick={{ fontSize: 10 }} stroke="#94a3b8" />
                                     <Tooltip contentStyle={{ borderRadius: 10, border: 'none' }} />
                                     <Legend wrapperStyle={{ fontSize: 10 }} />
-                                    <Bar dataKey="bids" name="📥 BID (Buy)" fill="#3b82f6" radius={[3, 3, 0, 0]} />
-                                    <Bar dataKey="asks" name="📤 ASK (Sell)" fill="#f97316" radius={[3, 3, 0, 0]} />
+                                    <Bar dataKey="bids" name="📥 BID" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                                    <Bar dataKey="asks" name="📤 ASK" fill="#f97316" radius={[3, 3, 0, 0]} />
                                 </BarChart>
                             </ResponsiveContainer>
                         </ChartBox>
                     </div>
 
-                    {/* Welfare + Trade Volume + Climate */}
-                    <ChartBox title="Welfare Index Trends" icon="health_and_safety" style={{ marginBottom: 20 }}>
-                        <ResponsiveContainer width="100%" height={240}>
+                    <ChartBox title="Welfare Index Trends (Historical)" icon="health_and_safety">
+                        <ResponsiveContainer width="100%" height={220}>
                             <AreaChart data={welfareHistory}>
                                 <defs>
                                     {Object.entries(STATE_COLORS).map(([s, c]) => (
@@ -345,37 +365,6 @@ export default function DashboardTab({ tick, regions, trades, governorMessages, 
                             </AreaChart>
                         </ResponsiveContainer>
                     </ChartBox>
-
-                    {/* Bottom: Pie + Climate + Trade Log */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 16 }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                            <ChartBox title="Trade Volume by Resource" icon="donut_large">
-                                <ResponsiveContainer width="100%" height={180}>
-                                    <PieChart>
-                                        <Pie data={tradeVolume} dataKey="volume" nameKey="resource" cx="50%" cy="50%"
-                                            outerRadius={65} innerRadius={35} paddingAngle={4}
-                                            label={({ resource, percent }) => `${resource} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                                            {tradeVolume.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                                        </Pie>
-                                        <Tooltip formatter={(v) => fmt(v)} />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            </ChartBox>
-                            <ChartBox title="Climate Events Summary" icon="thunderstorm">
-                                {climateSummary.map(c => (
-                                    <div key={c.event} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#f8fafc', borderRadius: 8, marginBottom: 4 }}>
-                                        <span style={{ fontSize: 12 }}>
-                                            {c.event === 'Drought' ? '🏜️' : c.event === 'Flood' ? '🌊' : c.event === 'Cyclone' ? '🌪️' : c.event === 'Heatwave' ? '🔥' : '⚡'} {c.event}
-                                        </span>
-                                        <span style={{ background: '#3b82f6', color: '#fff', padding: '1px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>{c.count}</span>
-                                    </div>
-                                ))}
-                            </ChartBox>
-                        </div>
-                        <ChartBox title="📊 CSV Trade Log (10,000 Rows Dataset)" icon="receipt_long">
-                            <CsvTradeLog csvTrades={csvTrades} />
-                        </ChartBox>
-                    </div>
                 </>
             )}
         </div>
