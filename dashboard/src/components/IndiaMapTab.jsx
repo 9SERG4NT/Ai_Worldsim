@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useRef } from 'react'
-import { GoogleMap, useJsApiLoader, Marker, InfoWindow, Circle } from '@react-google-maps/api'
+import React, { useState, useRef, useEffect } from 'react'
+import { MapContainer, TileLayer, CircleMarker, Popup, Circle, useMap } from 'react-leaflet'
+import 'leaflet/dist/leaflet.css'
 
 /* ── State Data ────────────────────────────────────────────────── */
 const STATES_DATA = {
@@ -15,42 +16,6 @@ const STATES_DATA = {
     MP: { name: 'Madhya Pradesh', lat: 22.9734, lng: 78.6569, color: '#6366f1', water: 1500, energy: 3400, food: 2800, tech: 5800, gdp: 3.9, welfare: 22.1 },
 }
 
-/* ── Map Configuration ─────────────────────────────────────────── */
-const MAP_CENTER = { lat: 22.5, lng: 79.5 }
-const MAP_ZOOM = 5
-
-const MAP_STYLES = [
-    { elementType: 'geometry', stylers: [{ color: '#f5f5f5' }] },
-    { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-    { elementType: 'labels.text.fill', stylers: [{ color: '#616161' }] },
-    { elementType: 'labels.text.stroke', stylers: [{ color: '#f5f5f5' }] },
-    { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
-    { featureType: 'administrative.province', elementType: 'geometry.stroke', stylers: [{ color: '#94a3b8', visibility: 'on', weight: 1 }] },
-    { featureType: 'administrative.country', elementType: 'geometry.stroke', stylers: [{ color: '#64748b', visibility: 'on', weight: 2 }] },
-    { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-    { featureType: 'road', stylers: [{ visibility: 'off' }] },
-    { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-    { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#c9d5e0' }] },
-    { featureType: 'water', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-]
-
-const MAP_OPTIONS = {
-    styles: MAP_STYLES,
-    disableDefaultUI: true,
-    zoomControl: true,
-    mapTypeControl: false,
-    scaleControl: false,
-    streetViewControl: false,
-    rotateControl: false,
-    fullscreenControl: false,
-    minZoom: 4,
-    maxZoom: 9,
-    restriction: {
-        latLngBounds: { north: 37, south: 6, west: 65, east: 100 },
-        strictBounds: true,
-    },
-}
-
 /* ── Welfare Color ─────────────────────────────────────────────── */
 function welfareColor(welfare) {
     if (welfare >= 50) return '#10b981'
@@ -64,6 +29,17 @@ function welfareLabel(welfare) {
     return 'Critical'
 }
 
+/* ── Map fly-to helper ─────────────────────────────────────────── */
+function FlyToState({ lat, lng }) {
+    const map = useMap()
+    useEffect(() => {
+        if (lat && lng) {
+            map.flyTo([lat, lng], 7, { duration: 0.8 })
+        }
+    }, [lat, lng, map])
+    return null
+}
+
 /* ── State Info Panel (Right Side) ─────────────────────────────── */
 function StateInfoPanel({ state, onClose }) {
     if (!state) return null
@@ -71,7 +47,7 @@ function StateInfoPanel({ state, onClose }) {
     const wColor = welfareColor(data.welfare)
 
     return (
-        <aside className="absolute right-6 top-6 bottom-6 w-80 glass-panel rounded-2xl shadow-lg flex flex-col z-20">
+        <aside className="absolute right-6 top-6 bottom-6 w-80 glass-panel rounded-2xl shadow-lg flex flex-col z-[1000]">
             <div className="p-5 border-b border-slate-200/50 flex justify-between items-center shrink-0">
                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: data.color }} />
@@ -130,9 +106,9 @@ function StateInfoPanel({ state, onClose }) {
 }
 
 /* ── Legend Panel (Left Side) ──────────────────────────────────── */
-function LegendPanel({ onSelectState }) {
+function LegendPanel({ onSelectState, selectedState }) {
     return (
-        <aside className="absolute left-6 top-6 w-72 glass-panel rounded-2xl shadow-lg z-20">
+        <aside className="absolute left-6 top-6 w-72 glass-panel rounded-2xl shadow-lg z-[1000]">
             <div className="p-4 border-b border-slate-200/50">
                 <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
                     <span className="material-symbols-outlined text-[#137fec] text-[18px]">pin_drop</span>
@@ -142,11 +118,12 @@ function LegendPanel({ onSelectState }) {
             <div className="p-3 space-y-1 max-h-[calc(100vh-220px)] overflow-y-auto scroll-area">
                 {Object.entries(STATES_DATA).map(([code, data]) => {
                     const wColor = welfareColor(data.welfare)
+                    const isSelected = selectedState === code
                     return (
                         <button
                             key={code}
                             onClick={() => onSelectState(code)}
-                            className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-white/80 transition-all text-left group"
+                            className={`w-full flex items-center gap-3 p-2.5 rounded-xl transition-all text-left group ${isSelected ? 'bg-white shadow-sm border border-slate-200' : 'hover:bg-white/80'}`}
                         >
                             <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: data.color }} />
                             <div className="flex-1 min-w-0">
@@ -164,129 +141,120 @@ function LegendPanel({ onSelectState }) {
     )
 }
 
+/* ── Custom Popup Content ──────────────────────────────────────── */
+function PopupContent({ code, data }) {
+    const wColor = welfareColor(data.welfare)
+    return (
+        <div style={{ fontFamily: 'Inter, sans-serif', minWidth: '180px', padding: '4px' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, color: data.color, marginBottom: '8px' }}>
+                {data.name} ({code})
+            </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '4px 0', borderBottom: '1px solid #f1f5f9', color: '#475569' }}>
+                <span style={{ color: '#94a3b8', fontWeight: 500 }}>GDP</span>
+                <span style={{ fontWeight: 600 }}>{data.gdp}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '4px 0', borderBottom: '1px solid #f1f5f9', color: '#475569' }}>
+                <span style={{ color: '#94a3b8', fontWeight: 500 }}>Welfare</span>
+                <span style={{ fontWeight: 600, color: wColor }}>{data.welfare}%</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '4px 0', borderBottom: '1px solid #f1f5f9', color: '#475569' }}>
+                <span style={{ color: '#94a3b8', fontWeight: 500 }}>Water</span>
+                <span>{data.water.toLocaleString()}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '4px 0', borderBottom: '1px solid #f1f5f9', color: '#475569' }}>
+                <span style={{ color: '#94a3b8', fontWeight: 500 }}>Energy</span>
+                <span>{data.energy.toLocaleString()}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '4px 0', borderBottom: '1px solid #f1f5f9', color: '#475569' }}>
+                <span style={{ color: '#94a3b8', fontWeight: 500 }}>Food</span>
+                <span>{data.food.toLocaleString()}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', padding: '4px 0', color: '#475569' }}>
+                <span style={{ color: '#94a3b8', fontWeight: 500 }}>Tech</span>
+                <span>{data.tech.toLocaleString()}</span>
+            </div>
+        </div>
+    )
+}
+
 /* ── Main India Map Tab ────────────────────────────────────────── */
 export default function IndiaMapTab({ tick }) {
     const [selectedState, setSelectedState] = useState(null)
-    const [activeInfoWindow, setActiveInfoWindow] = useState(null)
-    const mapRef = useRef(null)
+    const [flyTarget, setFlyTarget] = useState(null)
 
-    const { isLoaded, loadError } = useJsApiLoader({
-        googleMapsApiKey: 'AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8', // Demo key
-    })
-
-    const onMapLoad = useCallback((map) => {
-        mapRef.current = map
-    }, [])
-
-    const onMarkerClick = useCallback((stateCode) => {
-        setSelectedState(stateCode)
-        setActiveInfoWindow(stateCode)
-        const data = STATES_DATA[stateCode]
-        if (mapRef.current) {
-            mapRef.current.panTo({ lat: data.lat, lng: data.lng })
-        }
-    }, [])
-
-    if (loadError) {
-        return (
-            <div className="relative w-full h-full flex items-center justify-center bg-slate-50">
-                <div className="glass-panel rounded-2xl p-8 text-center max-w-md">
-                    <span className="material-symbols-outlined text-[48px] text-slate-300 mb-4">map</span>
-                    <h3 className="text-lg font-bold text-slate-700 mb-2">Google Maps Unavailable</h3>
-                    <p className="text-sm text-slate-500">
-                        Could not load Google Maps API. Please check your API key configuration and try again.
-                    </p>
-                </div>
-            </div>
-        )
-    }
-
-    if (!isLoaded) {
-        return (
-            <div className="relative w-full h-full flex items-center justify-center bg-slate-50">
-                <div className="flex items-center gap-3 text-slate-500">
-                    <div className="w-5 h-5 border-2 border-slate-300 border-t-[#137fec] rounded-full animate-spin" />
-                    <span className="text-sm font-medium">Loading India Map...</span>
-                </div>
-            </div>
-        )
+    function handleSelectState(code) {
+        setSelectedState(code)
+        const data = STATES_DATA[code]
+        setFlyTarget({ lat: data.lat, lng: data.lng })
     }
 
     return (
         <div className="relative w-full h-full">
-            <GoogleMap
-                mapContainerClassName="gmap-container"
-                center={MAP_CENTER}
-                zoom={MAP_ZOOM}
-                options={MAP_OPTIONS}
-                onLoad={onMapLoad}
-                onClick={() => { setActiveInfoWindow(null) }}
+            <MapContainer
+                center={[22.5, 79.5]}
+                zoom={5}
+                minZoom={4}
+                maxZoom={9}
+                maxBounds={[[6, 65], [37, 100]]}
+                maxBoundsViscosity={1.0}
+                style={{ width: '100%', height: '100%', zIndex: 0 }}
+                zoomControl={true}
             >
+                {/* Base tile layer — clean CartoDB style */}
+                <TileLayer
+                    attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+                    url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                />
+
+                {/* Fly to selected state */}
+                {flyTarget && <FlyToState lat={flyTarget.lat} lng={flyTarget.lng} />}
+
+                {/* State overlays */}
                 {Object.entries(STATES_DATA).map(([code, data]) => {
                     const wColor = welfareColor(data.welfare)
+                    const isSelected = selectedState === code
+
                     return (
                         <React.Fragment key={code}>
                             {/* Welfare radius circle */}
                             <Circle
-                                center={{ lat: data.lat, lng: data.lng }}
+                                center={[data.lat, data.lng]}
                                 radius={data.welfare * 1500}
-                                options={{
+                                pathOptions={{
                                     fillColor: wColor,
-                                    fillOpacity: 0.12,
-                                    strokeColor: wColor,
-                                    strokeOpacity: 0.3,
-                                    strokeWeight: 1,
-                                    clickable: false,
+                                    fillOpacity: 0.1,
+                                    color: wColor,
+                                    weight: 1,
+                                    opacity: 0.25,
                                 }}
                             />
 
                             {/* State marker */}
-                            <Marker
-                                position={{ lat: data.lat, lng: data.lng }}
-                                onClick={() => onMarkerClick(code)}
-                                icon={{
-                                    path: 'M 0, 0 m -8, 0 a 8,8 0 1,0 16,0 a 8,8 0 1,0 -16,0',
+                            <CircleMarker
+                                center={[data.lat, data.lng]}
+                                radius={isSelected ? 12 : 8}
+                                pathOptions={{
                                     fillColor: data.color,
                                     fillOpacity: 1,
-                                    strokeColor: '#ffffff',
-                                    strokeWeight: 3,
-                                    scale: 1.2,
+                                    color: '#ffffff',
+                                    weight: 3,
+                                    opacity: 1,
                                 }}
-                                label={{
-                                    text: code,
-                                    color: '#1e293b',
-                                    fontSize: '10px',
-                                    fontWeight: '700',
-                                    fontFamily: 'Inter',
-                                    className: 'mt-5',
+                                eventHandlers={{
+                                    click: () => handleSelectState(code),
                                 }}
-                            />
-
-                            {/* Info window on click */}
-                            {activeInfoWindow === code && (
-                                <InfoWindow
-                                    position={{ lat: data.lat, lng: data.lng }}
-                                    onCloseClick={() => setActiveInfoWindow(null)}
-                                    options={{ pixelOffset: new window.google.maps.Size(0, -12) }}
-                                >
-                                    <div className="map-info-window">
-                                        <h3 style={{ color: data.color }}>{data.name}</h3>
-                                        <div className="stat-row"><span className="label">GDP</span><span>{data.gdp}</span></div>
-                                        <div className="stat-row"><span className="label">Welfare</span><span style={{ color: wColor, fontWeight: 600 }}>{data.welfare}%</span></div>
-                                        <div className="stat-row"><span className="label">Water</span><span>{data.water.toLocaleString()}</span></div>
-                                        <div className="stat-row"><span className="label">Energy</span><span>{data.energy.toLocaleString()}</span></div>
-                                        <div className="stat-row"><span className="label">Food</span><span>{data.food.toLocaleString()}</span></div>
-                                        <div className="stat-row"><span className="label">Tech</span><span>{data.tech.toLocaleString()}</span></div>
-                                    </div>
-                                </InfoWindow>
-                            )}
+                            >
+                                <Popup>
+                                    <PopupContent code={code} data={data} />
+                                </Popup>
+                            </CircleMarker>
                         </React.Fragment>
                     )
                 })}
-            </GoogleMap>
+            </MapContainer>
 
             {/* Legend */}
-            <LegendPanel onSelectState={onMarkerClick} />
+            <LegendPanel onSelectState={handleSelectState} selectedState={selectedState} />
 
             {/* State Info Panel */}
             <StateInfoPanel state={selectedState} onClose={() => setSelectedState(null)} />
