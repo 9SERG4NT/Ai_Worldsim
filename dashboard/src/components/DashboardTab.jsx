@@ -1,330 +1,383 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
+import {
+    LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+    Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area
+} from 'recharts'
 
-/* ── Dummy Data Generators ─────────────────────────────────────── */
-const STATES = ['PB', 'MH', 'TN', 'KA', 'GJ', 'UP', 'BR', 'WB', 'RJ', 'MP']
+const API = 'http://localhost:8000'
+
 const STATE_NAMES = {
     PB: 'Punjab', MH: 'Maharashtra', TN: 'Tamil Nadu', KA: 'Karnataka', GJ: 'Gujarat',
     UP: 'Uttar Pradesh', BR: 'Bihar', WB: 'West Bengal', RJ: 'Rajasthan', MP: 'Madhya Pradesh',
 }
-const RESOURCES = ['Water', 'Energy', 'Food', 'Tech']
-const RESOURCE_ICONS = { Water: 'water_drop', Energy: 'bolt', Food: 'nutrition', Tech: 'memory' }
-const RESOURCE_COLORS = { Water: 'cyan', Energy: 'amber', Food: 'emerald', Tech: 'indigo' }
 
-const STATE_MAP_POS = {
-    PB: { top: '22%', left: '38%', color: '#22c55e' },
-    RJ: { top: '38%', left: '30%', color: '#f59e0b' },
-    GJ: { top: '48%', left: '22%', color: '#a855f7' },
-    UP: { top: '32%', left: '52%', color: '#ef4444' },
-    MP: { top: '48%', left: '42%', color: '#6366f1' },
-    MH: { top: '58%', left: '34%', color: '#3b82f6' },
-    BR: { top: '38%', left: '68%', color: '#ec4899' },
-    WB: { top: '45%', left: '74%', color: '#14b8a6' },
-    KA: { top: '72%', left: '38%', color: '#10b981' },
-    TN: { top: '82%', left: '44%', color: '#f97316' },
+const STATE_COLORS = {
+    PB: '#22c55e', MH: '#3b82f6', TN: '#f97316', KA: '#a855f7',
+    GJ: '#eab308', UP: '#ef4444', BR: '#ec4899', WB: '#14b8a6',
+    RJ: '#f59e0b', MP: '#6366f1',
 }
 
-function randomInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min }
+const PIE_COLORS = ['#06b6d4', '#f59e0b', '#10b981', '#a855f7']
 
-function generateTrade() {
-    const from = STATES[randomInt(0, STATES.length - 1)]
-    let to = from; while (to === from) to = STATES[randomInt(0, STATES.length - 1)]
-    const res = RESOURCES[randomInt(0, RESOURCES.length - 1)]
-    const amt = randomInt(50, 2000)
-    const units = res === 'Water' ? ' KL' : res === 'Energy' ? ' MW' : res === 'Food' ? ' Tons' : ' Units'
-    const timeAgo = ['Now', '1m ago', '2m ago', '3m ago', '5m ago'][randomInt(0, 4)]
-    return { id: Date.now() + Math.random(), from, to, resource: res, amount: amt, units, timeAgo }
+const fmt = (n) => {
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K'
+    return typeof n === 'number' ? n.toFixed(1) : n
 }
 
-const GOVERNOR_MSGS = [
-    { state: 'MH', text: 'Negotiating a water-for-energy swap with Karnataka. Surplus energy reserves allow for aggressive export policy this quarter.' },
-    { state: 'KA', text: 'Acknowledged. Proposal under review. Our agricultural sector requires immediate water supply to maintain yield targets. Counter-offer sent.' },
-    { state: 'TN', text: 'We face a severe drought. Will trade tech infrastructure for 500 units of water. This is urgent.' },
-    { state: 'GJ', text: 'Port operations at full capacity. Can facilitate trade corridors for coastal states. Need food security guarantees.' },
-    { state: 'PB', text: 'Wheat harvest exceeded projections. Open to bulk food exports. Seeking Energy or Tech in return.' },
-    { state: 'UP', text: 'Population growth straining water supply. Requesting emergency bilateral talks with PB for food-water swap.' },
-    { state: 'BR', text: 'Flood damage to agriculture. Declaring resource emergency. Requesting humanitarian aid from neighboring states.' },
-    { state: 'WB', text: 'Cultural districts driving tourism GDP. Surplus energy from solar farms. Offering 600 Energy for 400 Food.' },
-    { state: 'RJ', text: 'Desert solar installations online. Massive energy surplus. Will trade 1000 Energy for 800 Water — non-negotiable.' },
-    { state: 'MP', text: 'Central corridor trade agreements stable. Proposing multilateral treaty with MH and KA for resource pooling.' },
-    { state: 'MH', text: 'Counter-offering GJ: 500 Food for 700 Energy. Mumbai needs sustained power for Q3 industrial targets.' },
-    { state: 'KA', text: 'Bengaluru tech sector booming. We have 1200 Tech surplus. Looking for Water — willing to trade at 1:2 ratio.' },
-    { state: 'TN', text: 'Accepting KA offer for Tech-Water swap. Formalizing bilateral treaty. Trust level: HIGH.' },
-    { state: 'PB', text: 'Warning: Monsoon prediction models show 40% deficit. Recommending all northern states build water reserves.' },
-]
-
-const STATE_BUBBLE_COLORS = {
-    PB: { bg: 'bg-green-100', text: 'text-green-700' },
-    MH: { bg: 'bg-blue-100', text: 'text-blue-700' },
-    TN: { bg: 'bg-orange-100', text: 'text-orange-700' },
-    KA: { bg: 'bg-emerald-100', text: 'text-emerald-700' },
-    GJ: { bg: 'bg-purple-100', text: 'text-purple-700' },
-    UP: { bg: 'bg-red-100', text: 'text-red-700' },
-    BR: { bg: 'bg-pink-100', text: 'text-pink-700' },
-    WB: { bg: 'bg-teal-100', text: 'text-teal-700' },
-    RJ: { bg: 'bg-amber-100', text: 'text-amber-700' },
-    MP: { bg: 'bg-indigo-100', text: 'text-indigo-700' },
-}
-
-/* ── Left Panel: Live Trade Activity ───────────────────────────── */
-function LiveTradePanel() {
-    const [trades, setTrades] = useState(() => Array.from({ length: 6 }, generateTrade))
-    const scrollRef = useRef(null)
-
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setTrades(prev => [generateTrade(), ...prev].slice(0, 20))
-        }, 2500)
-        return () => clearInterval(interval)
-    }, [])
-
+/* ── Stat Card ────────────────────────────────────────────── */
+function StatCard({ icon, label, value, sub, color = '#3b82f6' }) {
     return (
-        <aside className="absolute left-6 top-6 bottom-6 w-80 glass-panel rounded-2xl shadow-lg flex flex-col z-20">
-            <div className="p-5 border-b border-slate-200/50 flex justify-between items-center shrink-0">
-                <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[#137fec] text-[20px]">swap_horiz</span>
-                    Live Trade
-                </h3>
-                <span className="inline-flex w-2 h-2 rounded-full bg-green-500" style={{ animation: 'pulse-subtle 2s infinite' }}></span>
+        <div style={{
+            background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(12px)',
+            borderRadius: 14, padding: '14px 18px', flex: '1 1 150px', minWidth: 150,
+            boxShadow: '0 2px 12px rgba(0,0,0,0.06)', border: '1px solid rgba(0,0,0,0.06)',
+            display: 'flex', alignItems: 'center', gap: 12,
+        }}>
+            <div style={{
+                width: 40, height: 40, borderRadius: 10, display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                background: `${color}18`, color, flexShrink: 0,
+            }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 20 }}>{icon}</span>
             </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-2 scroll-area" ref={scrollRef}>
-                {trades.map(trade => {
-                    const color = RESOURCE_COLORS[trade.resource]
-                    return (
-                        <div className="trade-item" key={trade.id}>
-                            <div className="flex items-center justify-between mb-1">
-                                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                                    {trade.resource} Transfer
-                                </span>
-                                <span className="text-[10px] text-slate-400">{trade.timeAgo}</span>
-                            </div>
-                            <div className="flex items-start gap-3">
-                                <div className={`w-8 h-8 rounded-full bg-${color}-50 flex items-center justify-center shrink-0`}>
-                                    <span className={`material-symbols-outlined text-${color}-500 text-[16px]`}>
-                                        {RESOURCE_ICONS[trade.resource]}
-                                    </span>
-                                </div>
-                                <div>
-                                    <p className="text-sm font-medium text-slate-800 leading-tight">
-                                        {STATE_NAMES[trade.from]} <span className="text-slate-400">→</span> {STATE_NAMES[trade.to]}
-                                    </p>
-                                    <p className="text-xs text-slate-500 mt-0.5">
-                                        {trade.amount.toLocaleString()}{trade.units}
-                                    </p>
-                                </div>
-                            </div>
+            <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#0f172a' }}>{value}</div>
+                {sub && <div style={{ fontSize: 10, color: '#64748b' }}>{sub}</div>}
+            </div>
+        </div>
+    )
+}
+
+/* ── Chart Container ──────────────────────────────────────── */
+function ChartBox({ title, icon, children, style = {} }) {
+    return (
+        <div style={{
+            background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(16px)',
+            borderRadius: 16, padding: '16px 18px', boxShadow: '0 3px 16px rgba(0,0,0,0.05)',
+            border: '1px solid rgba(0,0,0,0.05)', ...style,
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#3b82f6' }}>{icon}</span>
+                <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#1e293b' }}>{title}</h3>
+            </div>
+            {children}
+        </div>
+    )
+}
+
+/* ══════════════════════════════════════════════════════════════
+   LIVE TRADES & NEGOTIATIONS PANEL
+   — Shows real-time trades and governor AI messages from WebSocket
+   ══════════════════════════════════════════════════════════════ */
+function LiveFeed({ trades, governorMessages, climateEvents, tick }) {
+    return (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+            {/* Live Trades */}
+            <ChartBox title={`🔄 Live Trades (Tick ${tick})`} icon="swap_horiz">
+                <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                    {(!trades || trades.length === 0) ? (
+                        <div style={{ textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 13 }}>
+                            ⏳ Waiting for trades from LLM agents...
                         </div>
-                    )
-                })}
-            </div>
-        </aside>
-    )
-}
-
-/* ── Right Panel: Governor Intel ───────────────────────────────── */
-function GovernorIntelPanel() {
-    const [msgs, setMsgs] = useState(() => GOVERNOR_MSGS.slice(0, 4).map((m, i) => ({ ...m, id: i })))
-    const [tradeCounter, setTradeCounter] = useState(4092)
-    const scrollRef = useRef(null)
-
-    useEffect(() => {
-        const interval = setInterval(() => {
-            const msg = GOVERNOR_MSGS[randomInt(0, GOVERNOR_MSGS.length - 1)]
-            setMsgs(prev => [...prev, { ...msg, id: Date.now() + Math.random() }].slice(-15))
-            setTradeCounter(prev => prev + 1)
-        }, 4000)
-        return () => clearInterval(interval)
-    }, [])
-
-    useEffect(() => {
-        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }, [msgs])
-
-    return (
-        <aside className="absolute right-6 top-6 bottom-6 w-80 glass-panel rounded-2xl shadow-lg flex flex-col z-20">
-            <div className="p-5 border-b border-slate-200/50 shrink-0">
-                <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[#137fec] text-[20px]">psychology</span>
-                    Governor Intel
-                </h3>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-area" ref={scrollRef}>
-                {msgs.map((msg, i) => {
-                    const colors = STATE_BUBBLE_COLORS[msg.state] || { bg: 'bg-slate-100', text: 'text-slate-700' }
-                    return (
-                        <React.Fragment key={msg.id}>
-                            <div className="flex flex-col gap-2">
-                                <div className="flex items-center gap-2">
-                                    <div className={`w-6 h-6 rounded-full ${colors.bg} flex items-center justify-center`}>
-                                        <span className={`text-[10px] font-bold ${colors.text}`}>{msg.state}</span>
+                    ) : (
+                        trades.slice(-15).reverse().map((t, i) => (
+                            <div key={i} style={{
+                                padding: '10px 12px', marginBottom: 6, borderRadius: 10,
+                                background: i === 0 ? '#eff6ff' : '#f8fafc',
+                                borderLeft: `3px solid ${i === 0 ? '#3b82f6' : '#e2e8f0'}`,
+                                animation: i === 0 ? 'fadeIn 0.5s' : 'none',
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                    <span style={{ fontSize: 13, fontWeight: 700 }}>
+                                        <span style={{ color: STATE_COLORS[t.from] || '#333' }}>{STATE_NAMES[t.from] || t.from}</span>
+                                        <span style={{ color: '#94a3b8', margin: '0 6px' }}>→</span>
+                                        <span style={{ color: STATE_COLORS[t.to] || '#333' }}>{STATE_NAMES[t.to] || t.to}</span>
+                                    </span>
+                                    <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500 }}>Tick {t.tick}</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: '#475569' }}>
+                                    {t.offering && typeof t.offering === 'object'
+                                        ? <>📦 <b>Offering:</b> {Object.entries(t.offering).map(([k, v]) => `${k}: ${fmt(v)}`).join(', ')}</>
+                                        : `📦 Trade executed`
+                                    }
+                                </div>
+                                {t.requesting && typeof t.requesting === 'object' && (
+                                    <div style={{ fontSize: 11, color: '#475569' }}>
+                                        🎯 <b>Requesting:</b> {Object.entries(t.requesting).map(([k, v]) => `${k}: ${fmt(v)}`).join(', ')}
                                     </div>
-                                    <span className="text-xs font-medium text-slate-500">{STATE_NAMES[msg.state]} AI Governor</span>
-                                </div>
-                                <div className="chat-bubble">{msg.text}</div>
+                                )}
                             </div>
-                            {/* Occasional system notification */}
-                            {i === 1 && (
-                                <div className="flex justify-center my-1">
-                                    <div className="system-notif">Trade Agreement #{tradeCounter} Initialized</div>
-                                </div>
-                            )}
-                        </React.Fragment>
-                    )
-                })}
-            </div>
-            {/* Input Area */}
-            <div className="p-4 border-t border-slate-200/50 bg-white/40 shrink-0">
-                <div className="relative">
-                    <input
-                        className="w-full pl-4 pr-10 py-2.5 bg-white rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#137fec]/20 focus:border-[#137fec]/50 text-slate-700 placeholder:text-slate-400"
-                        placeholder="Query simulation logic..."
-                        type="text"
-                    />
-                    <button className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#137fec] transition-colors">
-                        <span className="material-symbols-outlined text-[20px]">send</span>
-                    </button>
+                        ))
+                    )}
                 </div>
-            </div>
-        </aside>
+            </ChartBox>
+
+            {/* Governor AI Negotiations */}
+            <ChartBox title="🤖 Governor AI Negotiations" icon="smart_toy">
+                <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                    {(!governorMessages || governorMessages.length === 0) ? (
+                        <div style={{ textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 13 }}>
+                            🧠 AI Governor thinking...
+                        </div>
+                    ) : (
+                        governorMessages.slice(-12).reverse().map((msg, i) => (
+                            <div key={i} style={{
+                                padding: '10px 12px', marginBottom: 6, borderRadius: 10,
+                                background: i === 0 ? '#f0fdf4' : '#f8fafc',
+                                borderLeft: `3px solid ${STATE_COLORS[msg.state] || '#10b981'}`,
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: STATE_COLORS[msg.state] || '#333' }}>
+                                        {STATE_NAMES[msg.state] || msg.state}
+                                    </span>
+                                    <span style={{ fontSize: 10, color: '#94a3b8' }}>Tick {msg.tick}</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.4 }}>{msg.text}</div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </ChartBox>
+
+            {/* Climate Events */}
+            <ChartBox title="🌍 Climate & Events" icon="thunderstorm">
+                <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                    {(!climateEvents || climateEvents.length === 0) ? (
+                        <div style={{ textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 13 }}>
+                            🌤️ No climate events yet
+                        </div>
+                    ) : (
+                        climateEvents.slice(-12).reverse().map((evt, i) => (
+                            <div key={i} style={{
+                                padding: '10px 12px', marginBottom: 6, borderRadius: 10,
+                                background: evt.type === 'danger' ? '#fef2f2' : '#fffbeb',
+                                borderLeft: `3px solid ${evt.type === 'danger' ? '#ef4444' : '#f59e0b'}`,
+                            }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>{evt.text}</div>
+                                <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>Tick {evt.tick}</div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </ChartBox>
+        </div>
     )
 }
 
-/* ── Bottom Stats Panel ────────────────────────────────────────── */
-function StatsPanel() {
-    const [gdp, setGdp] = useState(2.4)
-    const [gini, setGini] = useState(0.35)
-    const [gdpBars, setGdpBars] = useState([40, 60, 50, 70, 80, 100])
-    const [giniBars, setGiniBars] = useState([80, 75, 70, 65, 60, 55])
-    const [resBars, setResBars] = useState([50, 50, 40, 60, 45, 35])
+/* ── CSV Trade Log ─────────────────────────────────────────── */
+function CsvTradeLog({ csvTrades }) {
+    return (
+        <div style={{ maxHeight: 320, overflowY: 'auto', fontSize: 12 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                    <tr style={{ borderBottom: '2px solid #e2e8f0', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
+                        {['Tick', 'State', 'Type', 'Resource', 'Quantity', 'Price', 'Status'].map(h => (
+                            <th key={h} style={{ textAlign: 'left', padding: '8px 8px', color: '#64748b', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {csvTrades.slice(-80).reverse().map((t, i) => (
+                        <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fafbfc' : '#fff' }}>
+                            <td style={td}>{t.tick}</td>
+                            <td style={td}><span style={{ fontWeight: 600, color: STATE_COLORS[t.state] || '#333' }}>{STATE_NAMES[t.state] || t.state}</span></td>
+                            <td style={td}>
+                                <span style={{
+                                    padding: '2px 7px', borderRadius: 6, fontSize: 10, fontWeight: 700,
+                                    background: t.order_type === 'BID' ? '#dbeafe' : '#fef3c7',
+                                    color: t.order_type === 'BID' ? '#1d4ed8' : '#92400e',
+                                }}>{t.order_type}</span>
+                            </td>
+                            <td style={td}>{t.resource}</td>
+                            <td style={{ ...td, fontFamily: 'monospace' }}>{fmt(t.quantity)}</td>
+                            <td style={{ ...td, fontFamily: 'monospace' }}>₹{t.price.toFixed(2)}</td>
+                            <td style={td}>{t.executed ? <span style={{ color: '#16a34a' }}>✅</span> : <span style={{ color: '#dc2626' }}>❌</span>}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    )
+}
+
+const td = { padding: '6px 8px', color: '#334155', fontSize: 12 }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   MAIN DASHBOARD TAB
+   ═══════════════════════════════════════════════════════════════ */
+export default function DashboardTab({ tick, regions, trades, governorMessages, climateEvents, stats, connected, tickSummary }) {
+
+    const [gdpHistory, setGdpHistory] = useState([])
+    const [welfareHistory, setWelfareHistory] = useState([])
+    const [resourceOverview, setResourceOverview] = useState([])
+    const [tradeVolume, setTradeVolume] = useState([])
+    const [csvTrades, setCsvTrades] = useState([])
+    const [tradeActivity, setTradeActivity] = useState([])
+    const [climateSummary, setClimateSummary] = useState([])
+    const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        const interval = setInterval(() => {
-            setGdp(prev => +(prev + (Math.random() - 0.3) * 0.2).toFixed(1))
-            setGini(prev => +(prev + (Math.random() - 0.5) * 0.01).toFixed(2))
-            setGdpBars(prev => [...prev.slice(1), randomInt(30, 100)])
-            setGiniBars(prev => [...prev.slice(1), randomInt(30, 90)])
-            setResBars(prev => [...prev.slice(1), randomInt(20, 80)])
-        }, 3000)
-        return () => clearInterval(interval)
+        const load = async () => {
+            try {
+                const [gdp, welfare, overview, vol, tr, activity, climate] = await Promise.all([
+                    fetch(`${API}/api/csv/gdp-history`).then(r => r.json()),
+                    fetch(`${API}/api/csv/welfare-history`).then(r => r.json()),
+                    fetch(`${API}/api/csv/overview`).then(r => r.json()),
+                    fetch(`${API}/api/csv/trade-volume`).then(r => r.json()),
+                    fetch(`${API}/api/csv/trades`).then(r => r.json()),
+                    fetch(`${API}/api/csv/trade-activity`).then(r => r.json()),
+                    fetch(`${API}/api/csv/climate-summary`).then(r => r.json()),
+                ])
+                setGdpHistory(gdp); setWelfareHistory(welfare); setResourceOverview(overview)
+                setTradeVolume(vol); setCsvTrades(tr); setTradeActivity(activity); setClimateSummary(climate)
+            } catch (e) { console.error('CSV load error:', e) }
+            setLoading(false)
+        }
+        load()
     }, [])
 
-    const gdpPositive = gdp > 0
+    const totalGDP = stats?.total_gdp || Object.values(regions || {}).reduce((s, r) => s + (r.gdp || 0), 0)
+    const avgWelfare = stats?.avg_welfare || (Object.values(regions || {}).reduce((s, r) => s + (r.welfare || 0), 0) / Math.max(Object.keys(regions || {}).length, 1))
+    const gini = stats?.gini || 0
 
     return (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-3xl flex gap-4 z-20 px-6">
-            {/* GDP */}
-            <div className="stat-card glass-panel shadow-lg">
-                <div className="flex justify-between items-start mb-2">
-                    <div>
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">GDP Growth</p>
-                        <h4 className="text-2xl font-bold text-slate-800 mt-1">{gdpPositive ? '+' : ''}{gdp}%</h4>
-                    </div>
-                    <span className={`flex items-center ${gdpPositive ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50'} rounded-full px-2 py-0.5 text-xs font-medium`}>
-                        <span className="material-symbols-outlined text-[14px] mr-0.5">{gdpPositive ? 'trending_up' : 'trending_down'}</span>
-                        0.1%
-                    </span>
-                </div>
-                <div className="h-8 flex items-end gap-1">
-                    {gdpBars.map((h, i) => (
-                        <div key={i} className={`flex-1 spark-bar ${i === gdpBars.length - 1 ? 'bg-[#137fec]' : 'bg-slate-200'}`} style={{ height: `${h}%` }} />
-                    ))}
-                </div>
+        <div style={{ padding: 20, paddingBottom: 60 }}>
+
+            {/* ── Stats Row ───────────────────────────────── */}
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+                <StatCard icon="monitoring" label="Live Tick" value={tick || 0} sub={connected ? '🟢 Live' : '🔴 Offline'} color="#3b82f6" />
+                <StatCard icon="payments" label="Total GDP" value={`₹${totalGDP.toFixed(1)}B`} color="#10b981" />
+                <StatCard icon="favorite" label="Welfare" value={`${avgWelfare.toFixed(1)}%`} color="#f59e0b" />
+                <StatCard icon="equalizer" label="Gini" value={gini.toFixed(3)} sub={gini > 0.5 ? '⚠️ High' : '✅ OK'} color={gini > 0.5 ? '#ef4444' : '#10b981'} />
+                <StatCard icon="swap_horiz" label="Live Trades" value={trades?.length || 0} sub="from Ollama" color="#a855f7" />
+                <StatCard icon="psychology" label="AI Messages" value={governorMessages?.length || 0} color="#ec4899" />
             </div>
 
-            {/* Gini */}
-            <div className="stat-card glass-panel shadow-lg">
-                <div className="flex justify-between items-start mb-2">
-                    <div>
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Gini Index</p>
-                        <h4 className="text-2xl font-bold text-slate-800 mt-1">{gini.toFixed(2)}</h4>
-                    </div>
-                    <span className="flex items-center text-emerald-600 bg-emerald-50 rounded-full px-2 py-0.5 text-xs font-medium">
-                        <span className="material-symbols-outlined text-[14px] mr-0.5">arrow_downward</span>
-                        0.01
-                    </span>
+            {/* ── LIVE FEED: Trades + Negotiations + Climate ─ */}
+            <div style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: connected ? '#22c55e' : '#94a3b8', animation: connected ? 'pulse 2s infinite' : 'none' }} />
+                    <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Live Simulation Feed</h2>
+                    <span style={{ fontSize: 12, color: '#94a3b8' }}>— Real-time from Ollama Qwen</span>
                 </div>
-                <div className="h-8 flex items-end gap-1">
-                    {giniBars.map((h, i) => (
-                        <div key={i} className={`flex-1 spark-bar ${i === giniBars.length - 1 ? 'bg-emerald-500' : 'bg-slate-200'}`} style={{ height: `${h}%` }} />
-                    ))}
-                </div>
+                <LiveFeed trades={trades} governorMessages={governorMessages} climateEvents={climateEvents} tick={tick} />
             </div>
 
-            {/* Resource Balance */}
-            <div className="stat-card glass-panel shadow-lg">
-                <div className="flex justify-between items-start mb-2">
-                    <div>
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Res. Balance</p>
-                        <h4 className="text-2xl font-bold text-slate-800 mt-1">Stable</h4>
+            {/* ── Charts Grid ─────────────────────────────── */}
+            {loading ? (
+                <div style={{ textAlign: 'center', padding: 60, color: '#94a3b8' }}>Loading CSV dataset (10,000 rows)...</div>
+            ) : (
+                <>
+                    {/* GDP Line Chart — full width */}
+                    <ChartBox title="GDP Trends (120 Ticks from Dataset)" icon="trending_up" style={{ marginBottom: 20 }}>
+                        <ResponsiveContainer width="100%" height={280}>
+                            <LineChart data={gdpHistory}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis dataKey="tick" tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                                <YAxis tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                                <Tooltip contentStyle={{ borderRadius: 10, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.12)' }}
+                                    formatter={(v, name) => [`₹${v.toFixed(1)}B`, STATE_NAMES[name] || name]} />
+                                <Legend wrapperStyle={{ fontSize: 10 }} formatter={(v) => STATE_NAMES[v] || v} />
+                                {Object.keys(STATE_COLORS).map(s => (
+                                    <Line key={s} type="monotone" dataKey={s} stroke={STATE_COLORS[s]} strokeWidth={1.5} dot={false} />
+                                ))}
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </ChartBox>
+
+                    {/* 2-column charts */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+                        <ChartBox title="Resource Supply by State" icon="inventory_2">
+                            <ResponsiveContainer width="100%" height={250}>
+                                <BarChart data={resourceOverview}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                    <XAxis dataKey="state" tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                                    <YAxis tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                                    <Tooltip contentStyle={{ borderRadius: 10, border: 'none' }} formatter={(v) => fmt(v)} />
+                                    <Legend wrapperStyle={{ fontSize: 10 }} />
+                                    <Bar dataKey="water" name="💧 Water" fill="#06b6d4" radius={[3, 3, 0, 0]} />
+                                    <Bar dataKey="food" name="🌾 Food" fill="#10b981" radius={[3, 3, 0, 0]} />
+                                    <Bar dataKey="energy" name="⚡ Energy" fill="#f59e0b" radius={[3, 3, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </ChartBox>
+
+                        <ChartBox title="Trade Activity (BID vs ASK)" icon="candlestick_chart">
+                            <ResponsiveContainer width="100%" height={250}>
+                                <BarChart data={tradeActivity}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                    <XAxis dataKey="state" tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                                    <YAxis tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                                    <Tooltip contentStyle={{ borderRadius: 10, border: 'none' }} />
+                                    <Legend wrapperStyle={{ fontSize: 10 }} />
+                                    <Bar dataKey="bids" name="📥 BID (Buy)" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                                    <Bar dataKey="asks" name="📤 ASK (Sell)" fill="#f97316" radius={[3, 3, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </ChartBox>
                     </div>
-                    <span className="flex items-center text-rose-600 bg-rose-50 rounded-full px-2 py-0.5 text-xs font-medium">
-                        <span className="material-symbols-outlined text-[14px] mr-0.5">trending_down</span>
-                        1.2%
-                    </span>
-                </div>
-                <div className="h-8 flex items-end gap-1">
-                    {resBars.map((h, i) => (
-                        <div key={i} className={`flex-1 spark-bar ${i === resBars.length - 1 ? 'bg-rose-500' : 'bg-slate-200'}`} style={{ height: `${h}%` }} />
-                    ))}
-                </div>
-            </div>
-        </div>
-    )
-}
 
-/* ── Background Map Layer (SVG) ────────────────────────────────── */
-function BackgroundMap() {
-    return (
-        <div className="absolute inset-0 z-0 map-bg bg-slate-50 flex items-center justify-center">
-            <svg className="w-full h-full max-w-[800px] max-h-[800px] opacity-20 pointer-events-none" fill="none" viewBox="0 0 400 500">
-                <path d="M150,50 L250,50 L280,150 L350,200 L320,300 L200,450 L80,300 L50,200 L120,150 Z" stroke="#94a3b8" strokeLinejoin="round" strokeWidth="2" />
-                <path d="M120,150 L280,150" stroke="#cbd5e1" strokeWidth="1" />
-                <path d="M50,200 L350,200" stroke="#cbd5e1" strokeWidth="1" />
-                <path d="M80,300 L320,300" stroke="#cbd5e1" strokeWidth="1" />
-                <path d="M200,150 L200,450" stroke="#cbd5e1" strokeWidth="1" />
-            </svg>
+                    {/* Welfare + Trade Volume + Climate */}
+                    <ChartBox title="Welfare Index Trends" icon="health_and_safety" style={{ marginBottom: 20 }}>
+                        <ResponsiveContainer width="100%" height={240}>
+                            <AreaChart data={welfareHistory}>
+                                <defs>
+                                    {Object.entries(STATE_COLORS).map(([s, c]) => (
+                                        <linearGradient key={s} id={`wg_${s}`} x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor={c} stopOpacity={0.12} />
+                                            <stop offset="95%" stopColor={c} stopOpacity={0} />
+                                        </linearGradient>
+                                    ))}
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                <XAxis dataKey="tick" tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                                <YAxis tick={{ fontSize: 10 }} stroke="#94a3b8" domain={[0, 100]} />
+                                <Tooltip contentStyle={{ borderRadius: 10, border: 'none' }}
+                                    formatter={(v, name) => [`${v}%`, STATE_NAMES[name] || name]} />
+                                <Legend wrapperStyle={{ fontSize: 10 }} formatter={(v) => STATE_NAMES[v] || v} />
+                                {Object.entries(STATE_COLORS).map(([s, c]) => (
+                                    <Area key={s} type="monotone" dataKey={s} stroke={c} strokeWidth={1.5}
+                                        fillOpacity={1} fill={`url(#wg_${s})`} dot={false} />
+                                ))}
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </ChartBox>
 
-            {/* State Nodes */}
-            {Object.entries(STATE_MAP_POS).map(([code, pos]) => (
-                <div key={code} className="state-node absolute" style={{ top: pos.top, left: pos.left }}>
-                    <div className="relative">
-                        <div className="state-ping" style={{ backgroundColor: pos.color }} />
-                        <div className="state-dot" style={{ borderColor: pos.color }} />
+                    {/* Bottom: Pie + Climate + Trade Log */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 16 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <ChartBox title="Trade Volume by Resource" icon="donut_large">
+                                <ResponsiveContainer width="100%" height={180}>
+                                    <PieChart>
+                                        <Pie data={tradeVolume} dataKey="volume" nameKey="resource" cx="50%" cy="50%"
+                                            outerRadius={65} innerRadius={35} paddingAngle={4}
+                                            label={({ resource, percent }) => `${resource} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                                            {tradeVolume.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                                        </Pie>
+                                        <Tooltip formatter={(v) => fmt(v)} />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </ChartBox>
+                            <ChartBox title="Climate Events Summary" icon="thunderstorm">
+                                {climateSummary.map(c => (
+                                    <div key={c.event} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#f8fafc', borderRadius: 8, marginBottom: 4 }}>
+                                        <span style={{ fontSize: 12 }}>
+                                            {c.event === 'Drought' ? '🏜️' : c.event === 'Flood' ? '🌊' : c.event === 'Cyclone' ? '🌪️' : c.event === 'Heatwave' ? '🔥' : '⚡'} {c.event}
+                                        </span>
+                                        <span style={{ background: '#3b82f6', color: '#fff', padding: '1px 8px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>{c.count}</span>
+                                    </div>
+                                ))}
+                            </ChartBox>
+                        </div>
+                        <ChartBox title="📊 CSV Trade Log (10,000 Rows Dataset)" icon="receipt_long">
+                            <CsvTradeLog csvTrades={csvTrades} />
+                        </ChartBox>
                     </div>
-                    <span className="state-label">{code}</span>
-                </div>
-            ))}
-
-            {/* Animated Trade Arcs */}
-            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
-                <defs>
-                    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" style={{ stopColor: '#3b82f6' }} />
-                        <stop offset="100%" style={{ stopColor: '#a855f7' }} />
-                    </linearGradient>
-                    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" style={{ stopColor: '#10b981' }} />
-                        <stop offset="100%" style={{ stopColor: '#3b82f6' }} />
-                    </linearGradient>
-                </defs>
-                <path d="M430 400 Q 500 450 540 480" fill="none" stroke="url(#grad1)" strokeDasharray="5,5" strokeWidth="2" opacity="0.6">
-                    <animate attributeName="stroke-dashoffset" from="100" to="0" dur="2s" repeatCount="indefinite" />
-                </path>
-                <path d="M540 480 Q 580 550 620 620" fill="none" stroke="url(#grad2)" strokeDasharray="4,4" strokeWidth="2" opacity="0.6">
-                    <animate attributeName="stroke-dashoffset" from="0" to="100" dur="3s" repeatCount="indefinite" />
-                </path>
-            </svg>
-        </div>
-    )
-}
-
-/* ── Main Dashboard Tab ────────────────────────────────────────── */
-export default function DashboardTab({ tick }) {
-    return (
-        <div className="relative w-full h-full">
-            <BackgroundMap />
-            <LiveTradePanel />
-            <StatsPanel />
-            <GovernorIntelPanel />
+                </>
+            )}
         </div>
     )
 }
