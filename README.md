@@ -26,6 +26,7 @@
 - [Getting Started](#-getting-started)
 - [Usage](#-usage)
 - [Configuration](#%EF%B8%8F-configuration)
+- [Demo Video](https://drive.google.com/file/d/1-i0RmNdwwFbqaE8Bfvf19Y9POxwTrUGF/view?usp=sharing)
 
 ---
 
